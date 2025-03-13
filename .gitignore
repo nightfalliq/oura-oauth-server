@@ -1,0 +1,18 @@
+# But DO NOT ignore the Flask server folder
+!flask_server/
+
+# Ignore virtual environments
+.venv1/
+venv1/
+
+# Ignore compiled Python files
+__pycache__/ 
+
+# Ignore local config and database files
+.env
+oura_tokens.db
+
+# Ignore OS and IDE files
+.DS_Store
+Thumbs.db
+.idea/
