@@ -4,6 +4,7 @@
 # Ignore virtual environments
 .venv1/
 venv1/
+.env
 
 # Ignore compiled Python files
 __pycache__/ 

@@ -5,9 +5,9 @@ from flask import Flask, request, redirect, jsonify
 app = Flask(__name__)
 
 # Replace these with your Oura API credentials
-CLIENT_ID = "your_client_id_here"
-CLIENT_SECRET = "your_client_secret_here"
-REDIRECT_URI = "https://your-app.onrender.com/callback"  # Update after deploying
+CLIENT_ID = "5WKQJB355KD6ELTL"
+CLIENT_SECRET = "BX5X4ENYHMEPQJOMERBYY4L24NR2R7UX"
+REDIRECT_URI = "https://oura-oauth-server.onrender.com/callback"  # Update after deploying
 
 # Database setup (stores user tokens)
 conn = sqlite3.connect("oura_tokens.db", check_same_thread=False)
