@@ -8,9 +8,16 @@ from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
+# Read CLIENT_ID and CLIENT_SECRET from Render secret files if they exist
+def read_secret(secret_name):
+    try:
+        with open(f"/etc/secrets/{secret_name}", "r") as file:
+            return file.read().strip()
+    except FileNotFoundError:
+        return None
 
-CLIENT_ID = os.getenv("CLIENT_ID")
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+CLIENT_ID = read_secret("CLIENT_ID")
+CLIENT_SECRET = read_secret("CLIENT_SECRET")
 REDIRECT_URI = "https://oura-oauth-server.onrender.com/callback"
 
 print("🔹 CLIENT_ID:", "Loaded" if CLIENT_ID else "MISSING", flush=True)
