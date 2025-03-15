@@ -120,6 +120,7 @@ def fetch_oura_data(email):
 
     data = {}
     endpoints = {
+        "email": "https://api.ouraring.com/v2/usercollection/email",
         "personal_info": "https://api.ouraring.com/v2/usercollection/personal_info",
         "daily_data": "https://api.ouraring.com/v2/usercollection/daily",
         "heart_rate_data": "https://api.ouraring.com/v2/usercollection/heartrate",
