@@ -82,8 +82,6 @@ def get_token():
         # 🔹 Return Oura's actual error message
         return f"❌ Error retrieving token: {response.status_code} - {response.text}"
 
-
-
 def get_oura_email(access_token):
     """
     Fetches the user's email from Oura to associate with their token.
@@ -92,10 +90,11 @@ def get_oura_email(access_token):
     headers = {"Authorization": f"Bearer {access_token}"}
     response = requests.get(url, headers=headers)
 
+    print("🔹 Oura User Info Response:", response.status_code, response.text, flush=True)  # Debugging
+
     if response.status_code == 200:
         return response.json().get("email", "unknown_user")
     return "unknown_user"
-
 
 @app.route("/fetch_oura_data/<email>")
 def fetch_oura_data(email):
