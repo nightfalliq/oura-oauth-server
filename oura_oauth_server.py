@@ -157,22 +157,40 @@ def save_combined_csv(email, data):
     folder_path = r"C:\Users\chels\Documents\NIQ_data"
     filename = os.path.join(folder_path, f"{email}_oura_data_{datetime.now().strftime('%Y-%m-%d')}.csv")
 
-    # Make sure the folder exists
+    print(f"📂 [DEBUG] Attempting to save data for: {email}", flush=True)
+    print(f"📁 [DEBUG] Target folder: {folder_path}", flush=True)
+    print(f"📄 [DEBUG] Target file: {filename}", flush=True)
+
+    # Ensure the folder exists
     os.makedirs(folder_path, exist_ok=True)
 
-    with open(filename, mode='w', newline='') as file:
-        fieldnames = ["data_type", "status_code", "data"]
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
-        writer.writeheader()
+    # Open the file and write
+    try:
+        with open(filename, mode='w', newline='') as file:
+            fieldnames = ["data_type", "status_code", "data"]
+            writer = csv.DictWriter(file, fieldnames=fieldnames)
+            writer.writeheader()
 
-        for data_type, data_content in data.items():
-            if data_content and "data" in data_content:
-                for entry in data_content["data"]:
-                    writer.writerow(
-                        {"data_type": data_type, "status_code": data_content.get("status_code", "N/A"), "data": entry})
-            else:
-                writer.writerow({"data_type": data_type, "status_code": data_content.get("status_code", "N/A"),
-                                 "data": data_content})
+            for data_type, data_content in data.items():
+                if data_content:
+                    if isinstance(data_content, dict) and "data" in data_content:
+                        for entry in data_content["data"]:
+                            writer.writerow({
+                                "data_type": data_type,
+                                "status_code": data_content.get("status_code", "N/A"),
+                                "data": entry
+                            })
+                    else:
+                        writer.writerow({
+                            "data_type": data_type,
+                            "status_code": data_content.get("status_code", "N/A"),
+                            "data": data_content
+                        })
+
+        print(f"✅ File saved successfully: {filename}", flush=True)
+
+    except Exception as e:
+        print(f"❌ ERROR saving file: {e}", flush=True)
 
 
 if __name__ == "__main__":
