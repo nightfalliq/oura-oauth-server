@@ -37,6 +37,9 @@ def get_token():
     if not auth_code:
         return "❌ Error: No authorization code received."
 
+    # Debugging: Print auth code before exchange
+    print("Authorization Code Received:", auth_code)
+
     # Exchange the authorization code for an access token
     token_url = "https://cloud.ouraring.com/oauth/token"
     payload = {
