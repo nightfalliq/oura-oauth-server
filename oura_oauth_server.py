@@ -1,5 +1,5 @@
 import os
-from dotenv import load_dotenv
+import sys
 import requests
 import sqlite3
 import csv
@@ -8,12 +8,15 @@ from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
-# Load environment variables from the .env file
-load_dotenv()
 
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 REDIRECT_URI = "https://oura-oauth-server.onrender.com/callback"
+
+print("🔹 CLIENT_ID:", "Loaded" if CLIENT_ID else "MISSING", flush=True)
+print("🔹 CLIENT_SECRET:", "HIDDEN" if CLIENT_SECRET else "MISSING", flush=True)
+print("🔹 REDIRECT_URI:", REDIRECT_URI, flush=True)
+
 
 # Database setup (stores user tokens)
 conn = sqlite3.connect("oura_tokens.db", check_same_thread=False)
@@ -53,7 +56,7 @@ def get_token():
     response = requests.post(token_url, data=payload)
 
     # 🔹 Log full response for debugging
-    print("Oura Token Exchange Response:", response.status_code, response.text)
+    print("Oura Token Exchange Response:", response.status_code, response.text, flush=True)
 
     if response.status_code == 200:
         token_data = response.json()
