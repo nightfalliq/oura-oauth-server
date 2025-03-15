@@ -96,6 +96,7 @@ def get_oura_email(access_token):
         return response.json().get("email", "unknown_user")
     return "unknown_user"
 
+
 @app.route("/fetch_oura_data/<email>")
 def fetch_oura_data(email):
     """
@@ -129,18 +130,27 @@ def fetch_oura_data(email):
     }
 
     for key, url in endpoints.items():
+        print(f"🔹 Fetching data from endpoint: {key} ({url})", flush=True)  # Debugging
+
         try:
             params = {'start_date': start_date_str, 'end_date': end_date_str}
             response = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, params=params)
+
+            print(f"🔹 {key} Response Status: {response.status_code}", flush=True)  # Debugging
+            if response.status_code == 200:
+                print(f"🔹 {key} Data: {response.json()}", flush=True)  # Debugging
+
             data[key] = {
                 "status_code": response.status_code,
                 "data": response.json() if response.status_code == 200 else None
             }
         except Exception as e:
             data[key] = {"status_code": 500, "error": f"Error fetching data: {e}"}
+            print(f"❌ Error fetching {key}: {e}", flush=True)
 
     # Check if there is any valid data and save the available data
     if any(entry.get("data") for entry in data.values()):
+        print(f"🔹 Data available for {email}. Saving to CSV...", flush=True)
         save_combined_csv(email, data)
         return jsonify(data)
 
