@@ -113,7 +113,6 @@ def fetch_oura_data(email):
         "heart_rate_data": "https://api.ouraring.com/v2/usercollection/heartrate",
         "workout_data": "https://api.ouraring.com/v2/usercollection/workout",
         "tags_data": "https://api.ouraring.com/v2/usercollection/tags",
-        "spo2_data": "https://api.ouraring.com/v2/usercollection/spo2_daily"
     }
 
     for key, url in endpoints.items():
