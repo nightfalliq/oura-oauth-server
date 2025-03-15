@@ -13,7 +13,7 @@ load_dotenv()
 
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-REDIRECT_URI = "https://oura-oauth-server.onrender.com/callback" 
+REDIRECT_URI = "https://oura-oauth-server.onrender.com/callback"
 
 # Database setup (stores user tokens)
 conn = sqlite3.connect("oura_tokens.db", check_same_thread=False)
@@ -21,9 +21,11 @@ cursor = conn.cursor()
 cursor.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT, access_token TEXT)")
 conn.commit()
 
+
 @app.route("/")
 def home():
     return "✅ Oura OAuth Server is running!"
+
 
 @app.route("/callback")
 def get_token():
@@ -46,6 +48,10 @@ def get_token():
     }
 
     response = requests.post(token_url, data=payload)
+
+    # 🔹 Log full response for debugging
+    print("Oura Token Exchange Response:", response.status_code, response.text)
+
     if response.status_code == 200:
         token_data = response.json()
         access_token = token_data.get("access_token")
@@ -58,8 +64,12 @@ def get_token():
         conn.commit()
 
         return f"✅ Access granted! Data for {email} has been stored."
-    
-    return "❌ Error: We were unable to retrieve the token. Please try again later."
+
+    else:
+        # 🔹 Return Oura's actual error message
+        return f"❌ Error retrieving token: {response.status_code} - {response.text}"
+
+
 
 def get_oura_email(access_token):
     """
@@ -72,6 +82,7 @@ def get_oura_email(access_token):
     if response.status_code == 200:
         return response.json().get("email", "unknown_user")
     return "unknown_user"
+
 
 @app.route("/fetch_oura_data/<email>")
 def fetch_oura_data(email):
@@ -94,7 +105,7 @@ def fetch_oura_data(email):
     # Convert to string format (YYYY-MM-DD)
     start_date_str = start_date.strftime('%Y-%m-%d')
     end_date_str = end_date.strftime('%Y-%m-%d')
-    
+
     data = {}
     endpoints = {
         "personal_info": "https://api.ouraring.com/v2/usercollection/personal_info",
@@ -104,7 +115,7 @@ def fetch_oura_data(email):
         "tags_data": "https://api.ouraring.com/v2/usercollection/tags",
         "spo2_data": "https://api.ouraring.com/v2/usercollection/spo2_daily"
     }
-    
+
     for key, url in endpoints.items():
         try:
             params = {'start_date': start_date_str, 'end_date': end_date_str}
@@ -120,11 +131,12 @@ def fetch_oura_data(email):
     if any(entry.get("data") for entry in data.values()):
         save_combined_csv(email, data)
         return jsonify(data)
-    
+
     return jsonify({
         "error": "Failed to fetch Oura data",
         "details": data
     })
+
 
 def save_combined_csv(email, data):
     """
@@ -132,10 +144,10 @@ def save_combined_csv(email, data):
     """
     folder_path = r"C:\Users\chels\Documents\NIQ_data"
     filename = os.path.join(folder_path, f"{email}_oura_data_{datetime.now().strftime('%Y-%m-%d')}.csv")
-    
+
     # Make sure the folder exists
     os.makedirs(folder_path, exist_ok=True)
-    
+
     with open(filename, mode='w', newline='') as file:
         fieldnames = ["data_type", "status_code", "data"]
         writer = csv.DictWriter(file, fieldnames=fieldnames)
@@ -144,9 +156,12 @@ def save_combined_csv(email, data):
         for data_type, data_content in data.items():
             if data_content and "data" in data_content:
                 for entry in data_content["data"]:
-                    writer.writerow({"data_type": data_type, "status_code": data_content.get("status_code", "N/A"), "data": entry})
+                    writer.writerow(
+                        {"data_type": data_type, "status_code": data_content.get("status_code", "N/A"), "data": entry})
             else:
-                writer.writerow({"data_type": data_type, "status_code": data_content.get("status_code", "N/A"), "data": data_content})
+                writer.writerow({"data_type": data_type, "status_code": data_content.get("status_code", "N/A"),
+                                 "data": data_content})
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
