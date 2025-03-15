@@ -86,7 +86,7 @@ def get_oura_email(access_token):
     """
     Fetches the user's email from Oura to associate with their token.
     """
-    url = "https://api.ouraring.com/v2/userinfo"
+    url = "https://api.ouraring.com/v2/personalinfo"
     headers = {"Authorization": f"Bearer {access_token}"}
     response = requests.get(url, headers=headers)
 
