@@ -3,8 +3,12 @@ import sys
 import requests
 import sqlite3
 import csv
+import logging
 from flask import Flask, request, jsonify
 from datetime import datetime, timedelta
+
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
 
@@ -34,8 +38,8 @@ conn.commit()
 
 @app.route("/")
 def home():
+    logging.info("Flask app is running.")
     return "✅ Oura OAuth Server is running!"
-
 
 @app.route("/callback")
 def get_token():
@@ -45,10 +49,11 @@ def get_token():
     """
     auth_code = request.args.get("code")
     if not auth_code:
+        logging.error("❌ Error: No authorization code received.")
         return "❌ Error: No authorization code received."
 
     # Debugging: Print auth code before exchange
-    print("Authorization Code Received:", auth_code)
+    logging.debug("Authorization Code Received:", auth_code)
 
     # Exchange the authorization code for an access token
     token_url = "https://cloud.ouraring.com/oauth/token"
@@ -68,18 +73,22 @@ def get_token():
     if response.status_code == 200:
         token_data = response.json()
         access_token = token_data.get("access_token")
+        logging.info(f"Access token retrieved successfully.")
 
         # Fetch user email to associate with the token
         email = get_oura_email(access_token)
+        logging.info(f"User email retrieved: {email}")
 
         # Save token to database
         cursor.execute("INSERT INTO users (email, access_token) VALUES (?, ?)", (email, access_token))
         conn.commit()
 
+        logging.info(f"Data saved for {email}")
         return f"✅ Access granted! Data for {email} has been stored."
 
     else:
         # 🔹 Return Oura's actual error message
+        logging.error(f"❌ Error retrieving token: {response.status_code}")
         return f"❌ Error retrieving token: {response.status_code} - {response.text}"
 
 def get_oura_email(access_token):
@@ -90,10 +99,12 @@ def get_oura_email(access_token):
     headers = {"Authorization": f"Bearer {access_token}"}
     response = requests.get(url, headers=headers)
 
-    print("🔹 Oura User Info Response:", response.status_code, response.text, flush=True)  # Debugging
+    logging.debug("🔹 Oura User Info Response:", response.status_code, response.text, flush=True)  # Debugging
 
     if response.status_code == 200:
         return response.json().get("email", "unknown_user")
+
+    logging.warning(f"❌ Failed to retrieve user email: {response.status_code}")
     return "unknown_user"
 
 
@@ -107,6 +118,7 @@ def fetch_oura_data(email):
     row = cursor.fetchone()
 
     if not row:
+        logging.warning(f"User {email} not found in database.")
         return jsonify({"error": "User not found"}), 404
 
     access_token = row[0]
@@ -134,26 +146,24 @@ def fetch_oura_data(email):
 
         try:
             params = {'start_date': start_date_str, 'end_date': end_date_str}
+            logging.debug(f"Fetching data from endpoint: {url}")
             response = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, params=params)
-
-            print(f"🔹 {key} Response Status: {response.status_code}", flush=True)  # Debugging
-            if response.status_code == 200:
-                print(f"🔹 {key} Data: {response.json()}", flush=True)  # Debugging
-
             data[key] = {
                 "status_code": response.status_code,
                 "data": response.json() if response.status_code == 200 else None
             }
+            logging.debug(f"Data for {key}: {response.status_code}")
         except Exception as e:
             data[key] = {"status_code": 500, "error": f"Error fetching data: {e}"}
-            print(f"❌ Error fetching {key}: {e}", flush=True)
+            logging.error(f"Error fetching {key}: {e}")
 
     # Check if there is any valid data and save the available data
     if any(entry.get("data") for entry in data.values()):
-        print(f"🔹 Data available for {email}. Saving to CSV...", flush=True)
+        logging.info(f"🔹 Data available for {email}. Saving to CSV...", flush=True)
         save_combined_csv(email, data)
         return jsonify(data)
 
+    logging.warning(f"Failed to fetch valid data for {email}.")
     return jsonify({
         "error": "Failed to fetch Oura data",
         "details": data
@@ -166,8 +176,10 @@ def save_combined_csv(email, data):
     folder_path = r"C:\Users\chels\Documents\NIQ_data"
     filename = os.path.join(folder_path, f"{email}_oura_data_{datetime.now().strftime('%Y-%m-%d')}.csv")
 
-    # Debug: print the filename
-    print("🔹 Saving data to:", filename)
+    logging.debug(f"📂 [DEBUG] Attempting to save data for: {email}")
+    logging.debug(f"📁 [DEBUG] Target folder: {folder_path}")
+    logging.debug(f"📄 [DEBUG] Target file: {filename}")
+
 
     # Make sure the folder exists
     os.makedirs(folder_path, exist_ok=True)
@@ -179,14 +191,11 @@ def save_combined_csv(email, data):
             writer = csv.DictWriter(file, fieldnames=fieldnames)
             writer.writeheader()
 
-            # Debug: print the data being written
-            print("🔹 Data being saved:", data)
-
             # Flatten data and write it into the CSV
             for data_type, data_content in data.items():
                 if data_content:
                     # Debug: print what data is being written for each type
-                    print(f"🔹 Writing data for {data_type}: {data_content}")
+                    logging.info(f"🔹 Writing data for {data_type}: {data_content}")
                     # If data has 'data' key (usually a list of entries)
                     if isinstance(data_content, dict) and "data" in data_content:
                         for entry in data_content["data"]:
@@ -196,8 +205,9 @@ def save_combined_csv(email, data):
                     else:  # In case it's not a list, store it directly
                         writer.writerow({"data_type": data_type, "status_code": data_content.get("status_code", "N/A"),
                                          "data": data_content})
+            logging.info(f"📄 Data written to {filename} successfully.")
     except Exception as e:
-        print(f"❌ Failed to write file: {e}")
+        logging.error(f"❌ Failed to save CSV file: {e}")
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
