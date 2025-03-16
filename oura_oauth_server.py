@@ -24,9 +24,9 @@ CLIENT_ID = read_secret("CLIENT_ID")
 CLIENT_SECRET = read_secret("CLIENT_SECRET")
 REDIRECT_URI = "https://oura-oauth-server.onrender.com/callback"
 
-print("🔹 CLIENT_ID:", "Loaded" if CLIENT_ID else "MISSING", flush=True)
-print("🔹 CLIENT_SECRET:", "HIDDEN" if CLIENT_SECRET else "MISSING", flush=True)
-print("🔹 REDIRECT_URI:", REDIRECT_URI, flush=True)
+print("🔹 CLIENT_ID:", "Loaded" if CLIENT_ID else "MISSING")
+print("🔹 CLIENT_SECRET:", "HIDDEN" if CLIENT_SECRET else "MISSING")
+print("🔹 REDIRECT_URI:", REDIRECT_URI)
 
 
 # Database setup (stores user tokens)
@@ -68,7 +68,7 @@ def get_token():
     response = requests.post(token_url, data=payload)
 
     # 🔹 Log full response for debugging
-    print("Oura Token Exchange Response:", response.status_code, response.text, flush=True)
+    print("Oura Token Exchange Response:", response.status_code, response.text)
 
     if response.status_code == 200:
         token_data = response.json()
@@ -99,7 +99,7 @@ def get_oura_email(access_token):
     headers = {"Authorization": f"Bearer {access_token}"}
     response = requests.get(url, headers=headers)
 
-    logging.debug("🔹 Oura User Info Response:", response.status_code, response.text, flush=True)  # Debugging
+    logging.debug("🔹 Oura User Info Response:", response.status_code, response.text)  # Debugging
 
     if response.status_code == 200:
         return response.json().get("email", "unknown_user")
@@ -142,7 +142,7 @@ def fetch_oura_data(email):
     }
 
     for key, url in endpoints.items():
-        print(f"🔹 Fetching data from endpoint: {key} ({url})", flush=True)  # Debugging
+        print(f"🔹 Fetching data from endpoint: {key} ({url})")  # Debugging
 
         try:
             params = {'start_date': start_date_str, 'end_date': end_date_str}
@@ -159,7 +159,7 @@ def fetch_oura_data(email):
 
     # Check if there is any valid data and save the available data
     if any(entry.get("data") for entry in data.values()):
-        logging.info(f"🔹 Data available for {email}. Saving to CSV...", flush=True)
+        logging.info(f"🔹 Data available for {email}. Saving to CSV...")
         save_combined_csv(email, data)
         return jsonify(data)
 
