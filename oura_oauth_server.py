@@ -12,6 +12,8 @@ logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
 
+# Base directory where data will be saved
+BASE_FOLDER = "C:/Users/chels/Documents/NIQ_data"
 
 # Read CLIENT_ID and CLIENT_SECRET from Render secret files if they exist
 def read_secret(secret_name):
@@ -126,21 +128,14 @@ def save_csv(folder, email, data_type, data):
 
     try:
         with open(filename, mode='w', newline='') as file:
-            # Ensure we write a CSV even if no data exists
-            if not data:
-                logging.warning(f"⚠️ No data found for {data_type}, creating empty CSV.")
-                writer = csv.writer(file)
-                writer.writerow(["date", "data"])  # Creates a file with just headers
-                writer.writerow(["No data available", ""])  # Placeholder row
-            else:
-                # Extract fieldnames from the first data entry
-                fieldnames = data[0].keys() if isinstance(data, list) and data else ["data"]
-                writer = csv.DictWriter(file, fieldnames=fieldnames)
-                writer.writeheader()
-                for entry in data:
-                    writer.writerow(entry)
+            fieldnames = data[0].keys() if isinstance(data, list) and data else ["data"]
+            writer = csv.DictWriter(file, fieldnames=fieldnames)
+            writer.writeheader()
+            for entry in data:
+                writer.writerow(entry)
 
         logging.info(f"✅ Successfully saved {data_type} data for {email}")
+
     except Exception as e:
         logging.error(f"❌ Error saving {data_type} data for {email}: {e}")
 
@@ -175,8 +170,7 @@ def fetch_oura_data(email):
     params = {'start_date': start_date.strftime('%Y-%m-%d'), 'end_date': end_date.strftime('%Y-%m-%d')}
 
     # Define client folder
-    base_folder = "C:/Users/chels/Documents/NIQ_data"
-    client_folder = os.path.join(base_folder, email)
+    client_folder = os.path.join(BASE_FOLDER, email)
     os.makedirs(client_folder, exist_ok=True)
 
     saved_files = []
@@ -186,27 +180,24 @@ def fetch_oura_data(email):
 
         try:
             response = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, params=params)
-
             if response.status_code == 200:
                 data = response.json().get("data", [])
-                logging.info(f"📊 Retrieved {len(data)} records from {key}")
 
-                if not data:
-                    logging.warning(f"⚠️ No data received for {key}, creating empty CSV.")
-
-                save_csv(client_folder, email, key, data)
-                saved_files.append(f"{key}.csv")
+                if data:
+                    logging.info(f"✅ Retrieved {len(data)} records from {key}, saving CSV.")
+                    save_csv(client_folder, email, key, data)
+                    saved_files.append(f"{key}.csv")
+                else:
+                    logging.warning(f"⚠️ No data found for {key}, skipping.")
 
             else:
-                logging.warning(f"❌ No data found for {key} (Status {response.status_code}), creating empty CSV.")
-                save_csv(client_folder, email, key, [])
+                logging.warning(f"🚫 Skipping {key}, no consent or unavailable (Status {response.status_code}).")
 
         except Exception as e:
             logging.error(f"❌ Error fetching {key} data for {email}: {e}")
-            save_csv(client_folder, email, key, [])
 
-    logging.info(f"✅ Data retrieval complete for {email}. Saved files: {saved_files}")
-    return jsonify({"status": "Data retrieval and saving complete", "saved_files": saved_files})
+        logging.info(f"✅ Data retrieval complete for {email}. Saved files: {saved_files}")
+        return jsonify({"status": "Data retrieval and saving complete", "saved_files": saved_files})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
