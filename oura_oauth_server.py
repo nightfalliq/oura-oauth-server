@@ -13,7 +13,8 @@ logging.basicConfig(level=logging.DEBUG)
 app = Flask(__name__)
 
 # Base directory where data will be saved
-BASE_FOLDER = "C:/Users/chels/Documents/NIQ_data"
+BASE_FOLDER = r"C:\temp\oura_data"
+
 
 # Read CLIENT_ID and CLIENT_SECRET from Render secret files if they exist
 def read_secret(secret_name):
