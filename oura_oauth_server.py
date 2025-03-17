@@ -45,6 +45,60 @@ cursor.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email 
 conn.commit()
 
 
+def get_oura_email(access_token):
+    """
+    Fetches the user's email from Oura to associate with their token.
+    """
+    url = "https://api.ouraring.com/v2/usercollection/personal_info"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    response = requests.get(url, headers=headers)
+
+    logging.debug(f"🔹 Oura User Info Response: {response.status_code}, {response.text}")  # Debugging
+
+    if response.status_code == 200:
+        return response.json().get("email", "unknown_user")
+
+    logging.warning(f"❌ Failed to retrieve user email: {response.status_code}")
+    return "unknown_user"
+
+
+def save_csv(folder, email, data_type, data):
+    """
+    Saves each data type as a separate CSV file inside the user's folder.
+    """
+    logging.info(f"📁 Attempting to save {data_type} data for {email}")
+
+    if not data:
+        logging.warning(f"⚠️ No data found for {data_type}, skipping CSV creation")
+        return
+
+    filename = os.path.join(folder, f"{data_type}_{datetime.now().strftime('%Y-%m-%d')}.csv")
+    logging.info(f"📁 Saving {data_type} data to {filename}")
+
+    try:
+        with open(filename, mode='w', newline='') as file:
+            if isinstance(data, list) and data:
+                fieldnames = data[0].keys()
+            else:
+                fieldnames = ["data"]  # Fallback case, should never happen
+
+            writer = csv.DictWriter(file, fieldnames=fieldnames)
+            writer.writeheader()
+            for entry in data:
+                writer.writerow(entry)
+
+        logging.info(f"✅ Successfully saved {data_type} data for {email}")
+
+        # Check if the file actually exists
+        if os.path.exists(filename):
+            logging.info(f"✅ Confirmed file exists: {filename}")
+        else:
+            logging.error(f"❌ File does NOT exist after writing: {filename}")
+
+    except Exception as e:
+        logging.error(f"❌ Error saving {data_type} data for {email}: {e}")
+
+
 @app.route("/")
 def home():
     logging.info("Flask app is running.")
@@ -102,58 +156,45 @@ def get_token():
         return f"❌ Error retrieving token: {response.status_code} - {response.text}"
 
 
-def get_oura_email(access_token):
-    """
-    Fetches the user's email from Oura to associate with their token.
-    """
-    url = "https://api.ouraring.com/v2/usercollection/personal_info"
-    headers = {"Authorization": f"Bearer {access_token}"}
-    response = requests.get(url, headers=headers)
-
-    logging.debug(f"🔹 Oura User Info Response: {response.status_code}, {response.text}")  # Debugging
-
-    if response.status_code == 200:
-        return response.json().get("email", "unknown_user")
-
-    logging.warning(f"❌ Failed to retrieve user email: {response.status_code}")
-    return "unknown_user"
-
-
-def save_csv(folder, email, data_type, data):
-    """
-    Saves each data type as a separate CSV file inside the user's folder.
-    """
-    logging.info(f"📁 Attempting to save {data_type} data for {email}")
-
-    if not data:
-        logging.warning(f"⚠️ No data found for {data_type}, skipping CSV creation")
-        return
-
-    filename = os.path.join(folder, f"{data_type}_{datetime.now().strftime('%Y-%m-%d')}.csv")
-    logging.info(f"📁 Saving {data_type} data to {filename}")
+@app.route("/test_save")
+def test_save():
+    folder = BASE_FOLDER
+    test_file = os.path.join(folder, "render_test.txt")
 
     try:
-        with open(filename, mode='w', newline='') as file:
-            if isinstance(data, list) and data:
-                fieldnames = data[0].keys()
-            else:
-                fieldnames = ["data"]  # Fallback case, should never happen
+        with open(test_file, "w") as f:
+            f.write("Render test successful")
+        return jsonify({"status": "✅ File write successful", "file_path": test_file})
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
-            writer = csv.DictWriter(file, fieldnames=fieldnames)
-            writer.writeheader()
-            for entry in data:
-                writer.writerow(entry)
 
-        logging.info(f"✅ Successfully saved {data_type} data for {email}")
+@app.route("/test_save_csv")
+def test_save_csv():
+    """
+    Tests the save_csv function by writing a test CSV file.
+    """
+    folder = "C:\\temp\\oura_data\\test_user"
+    os.makedirs(folder, exist_ok=True)
 
-        # Check if the file actually exists
-        if os.path.exists(filename):
-            logging.info(f"✅ Confirmed file exists: {filename}")
+    test_data = [
+        {"name": "Alice", "age": 30},
+        {"name": "Bob", "age": 25}
+    ]
+
+    test_filename = "test_data"
+    try:
+        save_csv(folder, "test_user", test_filename, test_data)
+
+        # ✅ Verify the file exists after writing
+        file_path = os.path.join(folder, f"{test_filename}_{datetime.now().strftime('%Y-%m-%d')}.csv")
+        if os.path.exists(file_path):
+            return jsonify({"status": "✅ `save_csv` function worked!", "file_path": file_path})
         else:
-            logging.error(f"❌ File does NOT exist after writing: {filename}")
+            return jsonify({"status": "❌ `save_csv` function did NOT create a file!"})
 
     except Exception as e:
-        logging.error(f"❌ Error saving {data_type} data for {email}: {e}")
+        return jsonify({"error": f"❌ Error in `save_csv`: {e}"})
 
 
 @app.route("/fetch_oura_data/<email>")
@@ -194,29 +235,28 @@ def fetch_oura_data(email):
     for key, url in endpoints.items():
         logging.debug(f"🔹 Fetching {key} data from {url}")
 
+    for key, url in endpoints.items():
         try:
             response = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, params=params)
+            response.raise_for_status()  # ✅ Ensure a failed request does not stop processing
 
-            if response.status_code == 200:
-                data = response.json().get("data", [])
+            data = response.json().get("data", [])
 
-                if data:
-                    logging.info(f"✅ Retrieved {len(data)} records from {key}, saving CSV.")
-                    save_csv(client_folder, email, key, data)
-                    saved_files.append(f"{key}.csv")
-                else:
-                    logging.warning(f"⚠️ No data found for {key}, skipping.")
-
+            if data:
+                logging.info(f"✅ Retrieved {len(data)} records from {key}, saving CSV.")
+                save_csv(client_folder, email, key, data)
+                saved_files.append(f"{key}.csv")
             else:
-                logging.warning(f"🚫 Skipping {key}, no consent or unavailable (Status {response.status_code}).")
+                logging.warning(f"⚠️ No data found for {key}, skipping.")
 
-        except Exception as e:
+        except requests.exceptions.RequestException as e:
             logging.error(f"❌ Error fetching {key} data for {email}: {e}")
+            continue  # ✅ Skip the failed endpoint and move to the next one
 
-    # ✅ Move the return statement outside the loop to ensure all endpoints are processed
+
+        # ✅ Move return statement outside loop to ensure all endpoints are processed
     logging.info(f"✅ Data retrieval complete for {email}. Saved files: {saved_files}")
     return jsonify({"status": "Data retrieval and saving complete", "saved_files": saved_files})
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
