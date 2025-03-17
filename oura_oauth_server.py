@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.DEBUG)
 app = Flask(__name__)
 
 # Base directory where data will be saved
-BASE_FOLDER = "C:/temp/oura_data"
+BASE_FOLDER = os.path.normpath"C:/temp/oura_data"
 
 # Ensure the base folder exists before saving files
 if not os.path.exists(BASE_FOLDER):
@@ -72,7 +72,7 @@ def save_csv(folder, email, data_type, data):
         logging.warning(f"⚠️ No data found for {data_type}, skipping CSV creation")
         return
 
-    filename = os.path.join(folder, f"{data_type}_{datetime.now().strftime('%Y-%m-%d')}.csv")
+    filename = os.path.normpath(os.path.join(folder, f"{data_type}_{datetime.now().strftime('%Y-%m-%d')}.csv"))
     logging.info(f"📁 Saving {data_type} data to {filename}")
 
     try:
@@ -174,7 +174,7 @@ def test_save_csv():
     """
     Tests the save_csv function by writing a test CSV file.
     """
-    folder = "C:\\temp\\oura_data\\test_user"
+    folder = os.path.normpath("C:/temp/oura_data/test_user")
     os.makedirs(folder, exist_ok=True)
 
     test_data = [
