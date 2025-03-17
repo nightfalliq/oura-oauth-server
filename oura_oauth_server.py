@@ -2,7 +2,7 @@ import os
 import sys
 import requests
 import sqlite3
-import csv
+import json
 import logging
 from flask import Flask, request, jsonify
 from datetime import datetime, timedelta
@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.DEBUG)
 app = Flask(__name__)
 
 # Base directory where data will be saved
-BASE_FOLDER = os.path.normpath("C:/temp/oura_data")
+BASE_FOLDER = os.path.normpath"C:/temp/oura_data"
 
 # Ensure the base folder exists before saving files
 if not os.path.exists(BASE_FOLDER):
@@ -62,30 +62,27 @@ def get_oura_email(access_token):
     return "unknown_user"
 
 
-def save_csv(folder, email, data_type, data):
+def save_json(folder, email, data_type, data):
     """
-    Saves each data type as a separate CSV file inside the user's folder.
+    Saves each data type as a separate JSON file inside the user's folder.
     """
     logging.info(f"📁 Attempting to save {data_type} data for {email}")
 
     if not data:
-        logging.warning(f"⚠️ No data found for {data_type}, skipping CSV creation")
+        logging.warning(f"⚠️ No data found for {data_type}, skipping JSON creation")
         return
 
-    filename = os.path.normpath(os.path.join(folder, f"{data_type}_{datetime.now().strftime('%Y-%m-%d')}.csv"))
+    folder = os.path.normpath(folder)  # Normalize folder path
+    os.makedirs(folder, exist_ok=True)  # Ensure directory exists
+
+    filename = os.path.join(folder, f"{data_type}_{datetime.now().strftime('%Y-%m-%d')}.json")
+    filename = os.path.normpath(filename)  # Normalize full path
+
     logging.info(f"📁 Saving {data_type} data to {filename}")
 
     try:
-        with open(filename, mode='w', newline='') as file:
-            if isinstance(data, list) and data:
-                fieldnames = data[0].keys()
-            else:
-                fieldnames = ["data"]  # Fallback case, should never happen
-
-            writer = csv.DictWriter(file, fieldnames=fieldnames)
-            writer.writeheader()
-            for entry in data:
-                writer.writerow(entry)
+        with open(filename, mode='w', encoding='utf-8') as file:
+            json.dump(data, file, indent=4)  # ✅ Save data as formatted JSON
 
         logging.info(f"✅ Successfully saved {data_type} data for {email}")
 
@@ -97,7 +94,6 @@ def save_csv(folder, email, data_type, data):
 
     except Exception as e:
         logging.error(f"❌ Error saving {data_type} data for {email}: {e}")
-
 
 @app.route("/")
 def home():
@@ -169,10 +165,10 @@ def test_save():
         return jsonify({"error": str(e)})
 
 
-@app.route("/test_save_csv")
-def test_save_csv():
+@app.route("/test_save_json")
+def test_save_json():
     """
-    Tests the save_csv function by writing a test CSV file.
+    Tests the save_json function by writing a test JSON file.
     """
     folder = os.path.normpath("C:/temp/oura_data/test_user")
     os.makedirs(folder, exist_ok=True)
@@ -184,23 +180,23 @@ def test_save_csv():
 
     test_filename = "test_data"
     try:
-        save_csv(folder, "test_user", test_filename, test_data)
+        save_json(folder, "test_user", test_filename, test_data)
 
         # ✅ Verify the file exists after writing
-        file_path = os.path.join(folder, f"{test_filename}_{datetime.now().strftime('%Y-%m-%d')}.csv")
+        file_path = os.path.join(folder, f"{test_filename}_{datetime.now().strftime('%Y-%m-%d')}.json")
         if os.path.exists(file_path):
-            return jsonify({"status": "✅ `save_csv` function worked!", "file_path": file_path})
+            return jsonify({"status": "✅ `save_json` function worked!", "file_path": file_path})
         else:
-            return jsonify({"status": "❌ `save_csv` function did NOT create a file!"})
+            return jsonify({"status": "❌ `save_json` function did NOT create a file!"})
 
     except Exception as e:
-        return jsonify({"error": f"❌ Error in `save_csv`: {e}"})
+        return jsonify({"error": f"❌ Error in `save_json`: {e}"})
 
 
 @app.route("/fetch_oura_data/<email>")
 def fetch_oura_data(email):
     """
-    Fetches Oura data for a specific user and saves each endpoint's data as a separate CSV file.
+    Fetches Oura data for a specific user and saves each endpoint's data as a separate JSON file.
     """
     cursor.execute("SELECT access_token FROM users WHERE email=?", (email,))
     row = cursor.fetchone()
@@ -243,9 +239,9 @@ def fetch_oura_data(email):
             data = response.json().get("data", [])
 
             if data:
-                logging.info(f"✅ Retrieved {len(data)} records from {key}, saving CSV.")
-                save_csv(client_folder, email, key, data)
-                saved_files.append(f"{key}.csv")
+                logging.info(f"✅ Retrieved {len(data)} records from {key}, saving json.")
+                save_json(client_folder, email, key, data)
+                saved_files.append(f"{key}.json")
             else:
                 logging.warning(f"⚠️ No data found for {key}, skipping.")
 
