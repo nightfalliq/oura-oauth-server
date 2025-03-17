@@ -115,7 +115,7 @@ def save_csv(folder, email, data_type, data):
     """
     Saves each data type as a separate CSV file inside the user's folder.
     """
-    logging.info(f"🔹 Attempting to save {data_type} data for {email}")
+    logging.info(f"📁 Attempting to save {data_type} data for {email}")
 
     if not data:
         logging.warning(f"⚠️ No data found for {data_type}, skipping CSV creation")
@@ -131,9 +131,9 @@ def save_csv(folder, email, data_type, data):
             writer.writeheader()
             for entry in data:
                 writer.writerow(entry)
-        logging.info(f"Successfully saved {data_type} data for {email}")
+        logging.info(f"✅ Successfully saved {data_type} data for {email}")
     except Exception as e:
-        logging.error(f"Error saving {data_type} data for {email}: {e}")
+        logging.error(f"❌ Error saving {data_type} data for {email}: {e}")
 
 
 @app.route("/fetch_oura_data/<email>")
@@ -178,6 +178,8 @@ def fetch_oura_data(email):
             response = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, params=params)
             if response.status_code == 200:
                 data = response.json().get("data", [])
+                if not data:
+                    logging.warning(f"⚠️ No data received for {key}, skipping.")
                 save_csv(client_folder, email, key, data)
             else:
                 logging.warning(f"Failed to fetch {key} data for {email}: {response.status_code}")
