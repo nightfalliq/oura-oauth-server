@@ -4,7 +4,7 @@ import requests
 import sqlite3
 import json
 import logging
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from datetime import datetime, timedelta
 
 # Set up logging
@@ -12,14 +12,17 @@ logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
 
-# Base directory where data will be saved
-BASE_FOLDER = os.path.normpath("C:/temp/oura_data")
+# Detect if running on Render or locally
+if "RENDER" in os.environ:
+    # ✅ Use Render's persistent storage (requires adding a Render Disk)
+    BASE_FOLDER = "/data/oura_data"
+else:
+    # ✅ Use a local directory that won't be deleted
+    BASE_FOLDER = os.path.join(os.getcwd(), "oura_data")  # Saves inside your Flask project folder
 
-# Ensure the base folder exists before saving files
-if not os.path.exists(BASE_FOLDER):
-    os.makedirs(BASE_FOLDER, exist_ok=True)
-    print(f"📁 Created missing directory: {BASE_FOLDER}")
-
+# Ensure the directory exists
+os.makedirs(BASE_FOLDER, exist_ok=True)
+print(f"📁 Base directory set to: {BASE_FOLDER}")
 
 # Read CLIENT_ID and CLIENT_SECRET from Render secret files if they exist
 def read_secret(secret_name):
@@ -253,6 +256,22 @@ def fetch_oura_data(email):
         # ✅ Move return statement outside loop to ensure all endpoints are processed
     logging.info(f"✅ Data retrieval complete for {email}. Saved files: {saved_files}")
     return jsonify({"status": "Data retrieval and saving complete", "saved_files": saved_files})
+
+
+@app.route("/download/<email>/<data_type>")
+def download_json(email, data_type):
+    """
+    Allows downloading JSON files from the Render server.
+    """
+    folder = os.path.join(BASE_FOLDER, email)
+    filename = f"{data_type}_{datetime.now().strftime('%Y-%m-%d')}.json"
+    file_path = os.path.join(folder, filename)
+
+    if os.path.exists(file_path):
+        return send_file(file_path, as_attachment=True)
+    else:
+        return jsonify({"error": "File not found"}), 404
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
