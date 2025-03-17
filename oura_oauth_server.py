@@ -140,6 +140,12 @@ def save_csv(folder, email, data_type, data):
 
         logging.info(f"✅ Successfully saved {data_type} data for {email}")
 
+        # Check if the file actually exists
+        if os.path.exists(filename):
+            logging.info(f"✅ Confirmed file exists: {filename}")
+        else:
+            logging.error(f"❌ File does NOT exist after writing: {filename}")
+
     except Exception as e:
         logging.error(f"❌ Error saving {data_type} data for {email}: {e}")
 
