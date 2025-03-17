@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.DEBUG)
 app = Flask(__name__)
 
 # Base directory where data will be saved
-BASE_FOLDER = r"C:\temp\oura_data"
+BASE_FOLDER = "C:/temp/oura_data"
 
 # Ensure the base folder exists before saving files
 if not os.path.exists(BASE_FOLDER):
