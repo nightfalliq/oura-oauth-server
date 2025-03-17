@@ -126,11 +126,20 @@ def save_csv(folder, email, data_type, data):
 
     try:
         with open(filename, mode='w', newline='') as file:
-            fieldnames = data[0].keys() if isinstance(data, list) and data else ["data"]
-            writer = csv.DictWriter(file, fieldnames=fieldnames)
-            writer.writeheader()
-            for entry in data:
-                writer.writerow(entry)
+            # Ensure we write a CSV even if no data exists
+            if not data:
+                logging.warning(f"⚠️ No data found for {data_type}, creating empty CSV.")
+                writer = csv.writer(file)
+                writer.writerow(["date", "data"])  # Creates a file with just headers
+                writer.writerow(["No data available", ""])  # Placeholder row
+            else:
+                # Extract fieldnames from the first data entry
+                fieldnames = data[0].keys() if isinstance(data, list) and data else ["data"]
+                writer = csv.DictWriter(file, fieldnames=fieldnames)
+                writer.writeheader()
+                for entry in data:
+                    writer.writerow(entry)
+
         logging.info(f"✅ Successfully saved {data_type} data for {email}")
     except Exception as e:
         logging.error(f"❌ Error saving {data_type} data for {email}: {e}")
@@ -170,6 +179,8 @@ def fetch_oura_data(email):
     client_folder = os.path.join(base_folder, email)
     os.makedirs(client_folder, exist_ok=True)
 
+    saved_files = []
+
     for key, url in endpoints.items():
         print(f"🔹 Fetching data from endpoint: {key} ({url})")  # Debugging
         try:
@@ -181,12 +192,15 @@ def fetch_oura_data(email):
                 if not data:
                     logging.warning(f"⚠️ No data received for {key}, skipping.")
                 save_csv(client_folder, email, key, data)
+                saved_files.append(f"{key}.csv")
             else:
                 logging.warning(f"Failed to fetch {key} data for {email}: {response.status_code}")
+
         except Exception as e:
             logging.error(f"Error fetching {key} data for {email}: {e}")
 
-    return jsonify({"status": "Data retrieval and saving complete"})
+    logging.info(f"✅ Data retrieval complete for {email}. Saved files: {saved_files}")
+    return jsonify({"status": "Data retrieval and saving complete", "saved_files": saved_files})
 
 
 if __name__ == "__main__":
