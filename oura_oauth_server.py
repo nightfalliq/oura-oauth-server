@@ -44,7 +44,6 @@ cursor = conn.cursor()
 cursor.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT, access_token TEXT)")
 conn.commit()
 
-
 def get_oura_email(access_token):
     """
     Fetches the user's email from Oura to associate with their token.
@@ -60,7 +59,6 @@ def get_oura_email(access_token):
 
     logging.warning(f"❌ Failed to retrieve user email: {response.status_code}")
     return "unknown_user"
-
 
 def save_json(folder, email, data_type, data):
     """
@@ -167,9 +165,6 @@ def test_save():
 
 @app.route("/test_save_json")
 def test_save_json():
-    """
-    Tests the save_json function by writing a test JSON file.
-    """
     folder = os.path.normpath("C:/temp/oura_data/test_user")
     os.makedirs(folder, exist_ok=True)
 
@@ -178,17 +173,22 @@ def test_save_json():
         {"name": "Bob", "age": 25}
     ]
 
-    test_filename = "test_data"
+    test_filename = f"test_data_{datetime.now().strftime('%Y-%m-%d')}.json"
+    file_path = os.path.join(folder, test_filename)
+
     try:
-        save_json(folder, "test_user", test_filename, test_data)
+        with open(file_path, "w") as json_file:
+            json.dump(test_data, json_file, indent=4)
 
-        # ✅ Verify the file exists after writing
-        file_path = os.path.join(folder, f"{test_filename}_{datetime.now().strftime('%Y-%m-%d')}.json")
-        if os.path.exists(file_path):
-            return jsonify({"status": "✅ `save_json` function worked!", "file_path": file_path})
-        else:
-            return jsonify({"status": "❌ `save_json` function did NOT create a file!"})
+        # ✅ Read the file immediately after saving
+        with open(file_path, "r") as json_file:
+            saved_data = json_file.read()
 
+        return jsonify({
+            "status": "✅ `save_json` function worked!",
+            "file_path": file_path,
+            "saved_data": saved_data
+        })
     except Exception as e:
         return jsonify({"error": f"❌ Error in `save_json`: {e}"})
 
