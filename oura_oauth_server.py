@@ -182,26 +182,31 @@ def fetch_oura_data(email):
     saved_files = []
 
     for key, url in endpoints.items():
-        print(f"🔹 Fetching data from endpoint: {key} ({url})")  # Debugging
+        logging.debug(f"🔹 Fetching {key} data from {url}")
+
         try:
-            logging.debug(f"Fetching data from endpoint: {url}")
-            logging.debug(f"🔹 Fetching {key} data: Response Code {response.status_code}, Response Body {response.text}")
             response = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, params=params)
+
             if response.status_code == 200:
                 data = response.json().get("data", [])
+                logging.info(f"📊 Retrieved {len(data)} records from {key}")
+
                 if not data:
-                    logging.warning(f"⚠️ No data received for {key}, skipping.")
+                    logging.warning(f"⚠️ No data received for {key}, creating empty CSV.")
+
                 save_csv(client_folder, email, key, data)
                 saved_files.append(f"{key}.csv")
+
             else:
-                logging.warning(f"Failed to fetch {key} data for {email}: {response.status_code}")
+                logging.warning(f"❌ No data found for {key} (Status {response.status_code}), creating empty CSV.")
+                save_csv(client_folder, email, key, [])
 
         except Exception as e:
-            logging.error(f"Error fetching {key} data for {email}: {e}")
+            logging.error(f"❌ Error fetching {key} data for {email}: {e}")
+            save_csv(client_folder, email, key, [])
 
     logging.info(f"✅ Data retrieval complete for {email}. Saved files: {saved_files}")
     return jsonify({"status": "Data retrieval and saving complete", "saved_files": saved_files})
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
