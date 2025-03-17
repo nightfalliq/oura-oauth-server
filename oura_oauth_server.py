@@ -128,7 +128,11 @@ def save_csv(folder, email, data_type, data):
 
     try:
         with open(filename, mode='w', newline='') as file:
-            fieldnames = data[0].keys() if isinstance(data, list) and data else ["data"]
+            if isinstance(data, list) and data:
+                fieldnames = data[0].keys()
+            else:
+                fieldnames = ["data"]  # Fallback case, should never happen
+
             writer = csv.DictWriter(file, fieldnames=fieldnames)
             writer.writeheader()
             for entry in data:
@@ -143,7 +147,7 @@ def save_csv(folder, email, data_type, data):
 @app.route("/fetch_oura_data/<email>")
 def fetch_oura_data(email):
     """
-    Fetches Oura data for a specific user and saves each endpoint's data as a separate CSV file
+    Fetches Oura data for a specific user and saves each endpoint's data as a separate CSV file.
     """
     cursor.execute("SELECT access_token FROM users WHERE email=?", (email,))
     row = cursor.fetchone()
@@ -180,6 +184,7 @@ def fetch_oura_data(email):
 
         try:
             response = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, params=params)
+
             if response.status_code == 200:
                 data = response.json().get("data", [])
 
@@ -196,8 +201,10 @@ def fetch_oura_data(email):
         except Exception as e:
             logging.error(f"❌ Error fetching {key} data for {email}: {e}")
 
-        logging.info(f"✅ Data retrieval complete for {email}. Saved files: {saved_files}")
-        return jsonify({"status": "Data retrieval and saving complete", "saved_files": saved_files})
+    # ✅ Move the return statement outside the loop to ensure all endpoints are processed
+    logging.info(f"✅ Data retrieval complete for {email}. Saved files: {saved_files}")
+    return jsonify({"status": "Data retrieval and saving complete", "saved_files": saved_files})
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
