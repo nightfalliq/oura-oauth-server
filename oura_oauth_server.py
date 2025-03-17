@@ -115,12 +115,14 @@ def save_csv(folder, email, data_type, data):
     """
     Saves each data type as a separate CSV file inside the user's folder.
     """
-    filename = os.path.join(folder, f"{data_type}_{datetime.now().strftime('%Y-%m-%d')}.csv")
-    logging.info(f"Saving {data_type} data to {filename}")
+    logging.info(f"🔹 Attempting to save {data_type} data for {email}")
 
     if not data:
-        logging.warning(f"No data to save for {data_type}")
+        logging.warning(f"⚠️ No data found for {data_type}, skipping CSV creation")
         return
+
+    filename = os.path.join(folder, f"{data_type}_{datetime.now().strftime('%Y-%m-%d')}.csv")
+    logging.info(f"📁 Saving {data_type} data to {filename}")
 
     try:
         with open(filename, mode='w', newline='') as file:
@@ -172,6 +174,7 @@ def fetch_oura_data(email):
         print(f"🔹 Fetching data from endpoint: {key} ({url})")  # Debugging
         try:
             logging.debug(f"Fetching data from endpoint: {url}")
+            logging.debug(f"🔹 Fetching {key} data: Response Code {response.status_code}, Response Body {response.text}")
             response = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, params=params)
             if response.status_code == 200:
                 data = response.json().get("data", [])
