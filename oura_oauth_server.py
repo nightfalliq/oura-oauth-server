@@ -247,15 +247,22 @@ def fetch_oura_data(email):
     for key, url in endpoints.items():
         logging.debug(f"🔹 Fetching {key} data from {url}")
 
-    for key, url in endpoints.items():
         try:
-            response = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, params=params)
-            response.raise_for_status()  # ✅ Ensure a failed request does not stop processing
+            # ✅ Handle `email` and `personal_info` separately (NO date params, NO `data` array)
+            if key in ["email", "personal_info"]:
+                response = requests.get(url, headers={"Authorization": f"Bearer {access_token}"})
+                response.raise_for_status()
+                data = response.json()  # These return a **single JSON object**, not `data[]`
+            else:
+                # ✅ Other endpoints (daily, heartrate, workout, tags) NEED date parameters
+                response = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, params=params)
+                response.raise_for_status()
+                data = response.json().get("data", [])  # These return `data[]`
 
-            data = response.json().get("data", [])
-
+            # ✅ Only save if data exists
             if data:
-                logging.info(f"✅ Retrieved {len(data)} records from {key}, saving json.")
+                logging.info(
+                    f"✅ Retrieved {len(data) if isinstance(data, list) else 1} records from {key}, saving JSON.")
                 save_json(client_folder, email, key, data)
                 saved_files.append(f"{key}.json")
             else:
@@ -263,8 +270,7 @@ def fetch_oura_data(email):
 
         except requests.exceptions.RequestException as e:
             logging.error(f"❌ Error fetching {key} data for {email}: {e}")
-            continue  # ✅ Skip the failed endpoint and move to the next one
-
+            continue  # ✅ Skip to next endpoint if an error occurs
 
         # ✅ Move return statement outside loop to ensure all endpoints are processed
     logging.info(f"✅ Data retrieval complete for {email}. Saved files: {saved_files}")
