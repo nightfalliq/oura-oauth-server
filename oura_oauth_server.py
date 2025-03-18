@@ -15,7 +15,7 @@ app = Flask(__name__)
 # Detect if running on Render or locally
 if "RENDER" in os.environ:
     # ✅ Use Render's persistent storage (requires adding a Render Disk)
-    BASE_FOLDER = "/data/oura_data"
+    BASE_FOLDER = "/tmp/oura_data"
 else:
     # ✅ Use a local directory that won't be deleted
     BASE_FOLDER = os.path.join(os.getcwd(), "oura_data")  # Saves inside your Flask project folder
