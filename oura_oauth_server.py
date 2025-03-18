@@ -113,8 +113,8 @@ def get_token():
         logging.error("❌ Error: No authorization code received.")
         return "❌ Error: No authorization code received."
 
-    # Debugging: Print auth code before exchange
-    logging.debug(f"Authorization Code Received: {auth_code}")
+    # 🔍 Debug: Print authorization code
+    print(f"🔹 DEBUG: Authorization Code Received: {auth_code}")
 
     # Exchange the authorization code for an access token
     token_url = "https://cloud.ouraring.com/oauth/token"
@@ -128,38 +128,43 @@ def get_token():
 
     response = requests.post(token_url, data=payload)
 
-    # 🔹 Log full response for debugging
-    print("Oura Token Exchange Response:", response.status_code, response.text)
+    # 🔍 Debug: Print API response
+    print("🔹 DEBUG: Oura Token Exchange Response:", response.status_code, response.text)
 
     if response.status_code == 200:
         token_data = response.json()
         access_token = token_data.get("access_token")
-        logging.info(f"Access token retrieved successfully.")
+        refresh_token = token_data.get("refresh_token", None)  # ✅ Get refresh token
+        logging.info(f"✅ Access token retrieved successfully.")
 
         # Fetch user email to associate with the token
         email = get_oura_email(access_token)
-        logging.info(f"User email retrieved: {email}")
+        logging.info(f"✅ User email retrieved: {email}")
 
-        # Save token to database
-        # ✅ Debugging - Print values before saving
-        print(f"🔹 Saving to database: Email={email}, Token={access_token}")
+        # ✅ Debugging: Print before saving
+        print(f"🔹 DEBUG: Saving to database -> Email: {email}, Token: {access_token}, Refresh Token: {refresh_token}")
 
-        cursor.execute("INSERT INTO users (email, access_token) VALUES (?, ?)", (email, access_token))
-        conn.commit()
+        try:
+            cursor.execute("""
+                INSERT INTO users (email, access_token, refresh_token)
+                VALUES (?, ?, ?)
+                ON CONFLICT(email) DO UPDATE SET access_token=excluded.access_token, refresh_token=excluded.refresh_token;
+            """, (email, access_token, refresh_token))
+            conn.commit()
+            print(f"✅ SUCCESS: User {email} saved in database!")
+        except Exception as e:
+            print(f"❌ ERROR: Failed to save user {email}: {e}")
 
-        # ✅ Debugging - Check if user was saved
+        # ✅ Verify if user was saved
         cursor.execute("SELECT * FROM users WHERE email=?", (email,))
         saved_user = cursor.fetchone()
-        print(f"✅ Saved user: {saved_user}")
+        print(f"🔍 Database check: Retrieved user: {saved_user}")
 
-        logging.info(f"Data saved for {email}")
         return f"✅ Access granted! Data for {email} has been stored."
 
     else:
-        # 🔹 Return Oura's actual error message
-        logging.error(f"❌ Error retrieving token: {response.status_code}")
+        logging.error(f"❌ Error retrieving token: {response.status_code} - {response.text}")
         return f"❌ Error retrieving token: {response.status_code} - {response.text}"
-
 
 @app.route("/test_save")
 def test_save():
