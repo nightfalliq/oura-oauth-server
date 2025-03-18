@@ -141,8 +141,16 @@ def get_token():
         logging.info(f"User email retrieved: {email}")
 
         # Save token to database
+        # ✅ Debugging - Print values before saving
+        print(f"🔹 Saving to database: Email={email}, Token={access_token}")
+
         cursor.execute("INSERT INTO users (email, access_token) VALUES (?, ?)", (email, access_token))
         conn.commit()
+
+        # ✅ Debugging - Check if user was saved
+        cursor.execute("SELECT * FROM users WHERE email=?", (email,))
+        saved_user = cursor.fetchone()
+        print(f"✅ Saved user: {saved_user}")
 
         logging.info(f"Data saved for {email}")
         return f"✅ Access granted! Data for {email} has been stored."
