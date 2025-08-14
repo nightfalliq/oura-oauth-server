@@ -1,230 +1,83 @@
 import os
-import sys
-import requests
-import sqlite3
 import json
 import logging
-from flask import Flask, request, jsonify, send_file
 from datetime import datetime, timedelta
+from typing import Dict, Any, List, Tuple
 
-# Set up logging
-logging.basicConfig(level=logging.DEBUG)
+import requests
+from flask import Flask, request, jsonify, Response
+import sqlite3
+import urllib.parse
 
+# -------------------------------------------------
+# Logging
+# -------------------------------------------------
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
+log = logging.getLogger(__name__)
+
+# -------------------------------------------------
+# App
+# -------------------------------------------------
 app = Flask(__name__)
 
-# Detect if running on Render or locally
-if "RENDER" in os.environ:
-    # ✅ Use Render's persistent storage (requires adding a Render Disk)
-    BASE_FOLDER = "/tmp/oura_data"
-else:
-    # ✅ Use a local directory that won't be deleted
-    BASE_FOLDER = os.path.join(os.getcwd(), "oura_data")  # Saves inside your Flask project folder
-
-# Ensure the directory exists
-os.makedirs(BASE_FOLDER, exist_ok=True)
-print(f"📁 Base directory set to: {BASE_FOLDER}")
-
-# Read CLIENT_ID and CLIENT_SECRET from Render secret files if they exist
-def read_secret(secret_name):
+def read_secret(secret_name: str) -> str | None:
     try:
-        with open(f"/etc/secrets/{secret_name}", "r") as file:
-            return file.read().strip()
+        with open(f"/etc/secrets/{secret_name}", "r") as fh:
+            return fh.read().strip()
     except FileNotFoundError:
         return None
 
+CLIENT_ID = read_secret("CLIENT_ID") or os.getenv("CLIENT_ID")
+CLIENT_SECRET = read_secret("CLIENT_SECRET") or os.getenv("CLIENT_SECRET")
+REDIRECT_URI = os.getenv("REDIRECT_URI", "https://oura-oauth-server.onrender.com/callback")
 
-CLIENT_ID = read_secret("CLIENT_ID")
-CLIENT_SECRET = read_secret("CLIENT_SECRET")
-REDIRECT_URI = "https://oura-oauth-server.onrender.com/callback"
+log.info(f"🔹 CLIENT_ID: {'Loaded' if CLIENT_ID else 'MISSING'}")
+log.info(f"🔹 CLIENT_SECRET: {'Loaded' if CLIENT_SECRET else 'MISSING'}")
+log.info(f"🔹 REDIRECT_URI: {REDIRECT_URI}")
 
-print("🔹 CLIENT_ID:", "Loaded" if CLIENT_ID else "MISSING")
-print("🔹 CLIENT_SECRET:", "HIDDEN" if CLIENT_SECRET else "MISSING")
-print("🔹 REDIRECT_URI:", REDIRECT_URI)
+# -------------------------------------------------
+# Database (SQLite by default; Postgres if DATABASE_URL set)
+# -------------------------------------------------
+DATABASE_URL = os.getenv("DATABASE_URL")  # e.g., postgresql://user:pass@host/db
+USING_SQLITE = not DATABASE_URL
 
-# Database setup (stores user tokens)
-conn = sqlite3.connect("oura_tokens.db", check_same_thread=False)
-cursor = conn.cursor()
-cursor.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT, access_token TEXT)")
-conn.commit()
+if USING_SQLITE:
+    DB_PATH = os.getenv("DB_PATH", "oura_tokens.db")
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    cursor = conn.cursor()
+    def db_execute(q, params=()):
+        cursor.execute(q, params)
+        conn.commit()
+    def db_query(q, params=()):
+        cursor.execute(q, params)
+        return cursor.fetchall()
+else:
+    # Minimal Postgres adapter without extra deps: use sqlite3 style through pysqlite? Not available.
+    # For Postgres, prefer adding 'psycopg[binary]' to your Render build. Until then, keep SQLite.
+    raise RuntimeError("Postgres requires psycopg; either add it to requirements or unset DATABASE_URL to use SQLite.")
 
-def get_oura_email(access_token):
-    """
-    Fetches the user's email from Oura to associate with their token.
-    """
-    url = "https://api.ouraring.com/v2/usercollection/personal_info"
-    headers = {"Authorization": f"Bearer {access_token}"}
-    response = requests.get(url, headers=headers)
-
-    logging.debug(f"🔹 Oura User Info Response: {response.status_code}, {response.text}")  # Debugging
-
-    if response.status_code == 200:
-        return response.json().get("email", "unknown_user")
-
-    logging.warning(f"❌ Failed to retrieve user email: {response.status_code}")
-    return "unknown_user"
-
-def save_json(folder, email, data_type, data):
-    """
-    Saves each data type as a separate JSON file inside the user's folder.
-    """
-    logging.info(f"📁 Attempting to save {data_type} data for {email}")
-
-    if not data:
-        logging.warning(f"⚠️ No data found for {data_type}, skipping JSON creation")
-        return
-
-    folder = os.path.normpath(folder)  # Normalize folder path
-    os.makedirs(folder, exist_ok=True)  # Ensure directory exists
-
-    filename = os.path.join(folder, f"{data_type}_{datetime.now().strftime('%Y-%m-%d')}.json")
-    filename = os.path.normpath(filename)  # Normalize full path
-
-    logging.info(f"📁 Saving {data_type} data to {filename}")
-
+def init_db():
+    db_execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY,
+        email TEXT UNIQUE,
+        access_token TEXT,
+        refresh_token TEXT
+    )
+    """)
+    # Ensure unique index on email
     try:
-        with open(filename, mode='w', encoding='utf-8') as file:
-            json.dump(data, file, indent=4)  # ✅ Save data as formatted JSON
+        db_execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+    except Exception:
+        pass
+init_db()
+log.info(f"🗄️  Using {'SQLite ' + os.path.abspath(DB_PATH) if USING_SQLITE else 'Postgres via DATABASE_URL'}")
 
-        logging.info(f"✅ Successfully saved {data_type} data for {email}")
-
-        # Check if the file actually exists
-        if os.path.exists(filename):
-            logging.info(f"✅ Confirmed file exists: {filename}")
-        else:
-            logging.error(f"❌ File does NOT exist after writing: {filename}")
-
-    except Exception as e:
-        logging.error(f"❌ Error saving {data_type} data for {email}: {e}")
-
-@app.route("/")
-def home():
-    logging.info("Flask app is running.")
-    return "✅ Oura OAuth Server is running!"
-
-
-@app.route("/callback")
-def get_token():
-    """
-    Handles Oura's OAuth callback, exchanges the authorization code for an access token,
-    and stores it for future API use.
-    """
-    auth_code = request.args.get("code")
-    if not auth_code:
-        logging.error("❌ Error: No authorization code received.")
-        return "❌ Error: No authorization code received."
-
-    # 🔍 Debug: Print authorization code
-    print(f"🔹 DEBUG: Authorization Code Received: {auth_code}")
-
-    # Exchange the authorization code for an access token
-    token_url = "https://cloud.ouraring.com/oauth/token"
-    payload = {
-        "grant_type": "authorization_code",
-        "code": auth_code,
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "redirect_uri": REDIRECT_URI
-    }
-
-    response = requests.post(token_url, data=payload)
-
-    # 🔍 Debug: Print API response
-    print("🔹 DEBUG: Oura Token Exchange Response:", response.status_code, response.text)
-
-    if response.status_code == 200:
-        token_data = response.json()
-        access_token = token_data.get("access_token")
-        refresh_token = token_data.get("refresh_token", None)  # ✅ Get refresh token
-        logging.info(f"✅ Access token retrieved successfully.")
-
-        # Fetch user email to associate with the token
-        email = get_oura_email(access_token)
-        logging.info(f"✅ User email retrieved: {email}")
-
-        # ✅ Debugging: Print before saving
-        print(f"🔹 DEBUG: Saving to database -> Email: {email}, Token: {access_token}, Refresh Token: {refresh_token}")
-
-        try:
-            cursor.execute("""
-                INSERT INTO users (email, access_token, refresh_token)
-                VALUES (?, ?, ?)
-                ON CONFLICT(email) DO UPDATE SET access_token=excluded.access_token, refresh_token=excluded.refresh_token;
-            """, (email, access_token, refresh_token))
-            conn.commit()
-            print(f"✅ SUCCESS: User {email} saved in database!")
-        except Exception as e:
-            print(f"❌ ERROR: Failed to save user {email}: {e}")
-
-        # ✅ Verify if user was saved
-        cursor.execute("SELECT * FROM users WHERE email=?", (email,))
-        saved_user = cursor.fetchone()
-        print(f"🔍 Database check: Retrieved user: {saved_user}")
-
-        return f"✅ Access granted! Data for {email} has been stored."
-
-    else:
-        logging.error(f"❌ Error retrieving token: {response.status_code} - {response.text}")
-        return f"❌ Error retrieving token: {response.status_code} - {response.text}"
-
-@app.route("/test_save")
-def test_save():
-    folder = BASE_FOLDER
-    test_file = os.path.join(folder, "render_test.txt")
-
-    try:
-        with open(test_file, "w") as f:
-            f.write("Render test successful")
-        return jsonify({"status": "✅ File write successful", "file_path": test_file})
-    except Exception as e:
-        return jsonify({"error": str(e)})
-
-
-@app.route("/test_save_json")
-def test_save_json():
-    folder = os.path.normpath("C:/temp/oura_data/test_user")
-    os.makedirs(folder, exist_ok=True)
-
-    test_data = [
-        {"name": "Alice", "age": 30},
-        {"name": "Bob", "age": 25}
-    ]
-
-    test_filename = f"test_data_{datetime.now().strftime('%Y-%m-%d')}.json"
-    file_path = os.path.join(folder, test_filename)
-
-    try:
-        with open(file_path, "w") as json_file:
-            json.dump(test_data, json_file, indent=4)
-
-        # ✅ Read the file immediately after saving
-        with open(file_path, "r") as json_file:
-            saved_data = json_file.read()
-
-        return jsonify({
-            "status": "✅ `save_json` function worked!",
-            "file_path": file_path,
-            "saved_data": saved_data
-        })
-    except Exception as e:
-        return jsonify({"error": f"❌ Error in `save_json`: {e}"})
-
-
-@app.route("/fetch_oura_data/<email>")
-def fetch_oura_data(email):
-    """
-    Fetches Oura data for a specific user and saves each endpoint's data as a separate JSON file.
-    """
-    cursor.execute("SELECT access_token FROM users WHERE email=?", (email,))
-    row = cursor.fetchone()
-
-    if not row:
-        logging.warning(f"User {email} not found in database.")
-        return jsonify({"error": "User not found"}), 404
-
-    access_token = row[0]
-
-    # Define endpoints
-    endpoints = {
+# -------------------------------------------------
+# Helpers
+# -------------------------------------------------
+def oura_endpoints() -> Dict[str, str]:
+    return {
         "email": "https://api.ouraring.com/v2/usercollection/email",
         "personal_info": "https://api.ouraring.com/v2/usercollection/personal_info",
         "daily_data": "https://api.ouraring.com/v2/usercollection/daily",
@@ -233,64 +86,147 @@ def fetch_oura_data(email):
         "tags_data": "https://api.ouraring.com/v2/usercollection/tags",
     }
 
-    # Set the date range for the last year
-    end_date = datetime.today().date()
-    start_date = end_date - timedelta(days=365)  # 365 days ago
-    params = {'start_date': start_date.strftime('%Y-%m-%d'), 'end_date': end_date.strftime('%Y-%m-%d')}
-
-    # Define client folder
-    client_folder = os.path.join(BASE_FOLDER, email)
-    os.makedirs(client_folder, exist_ok=True)
-
-    saved_files = []
-
-    for key, url in endpoints.items():
-        logging.debug(f"🔹 Fetching {key} data from {url}")
-
+def get_oura_email(access_token: str) -> str:
+    url = oura_endpoints()["email"]
+    headers = {"Authorization": f"Bearer {access_token}"}
+    resp = requests.get(url, headers=headers, timeout=30)
+    if resp.status_code == 200:
         try:
-            # ✅ Handle `email` and `personal_info` separately (NO date params, NO `data` array)
-            if key in ["email", "personal_info"]:
-                response = requests.get(url, headers={"Authorization": f"Bearer {access_token}"})
-                response.raise_for_status()
-                data = response.json()  # These return a **single JSON object**, not `data[]`
-            else:
-                # ✅ Other endpoints (daily, heartrate, workout, tags) NEED date parameters
-                response = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, params=params)
-                response.raise_for_status()
-                data = response.json().get("data", [])  # These return `data[]`
+            data = resp.json()
+            return data.get("email", "unknown_user")
+        except ValueError:
+            pass
+    log.warning(f"❌ Failed to retrieve user email: {resp.status_code} {resp.text[:120]}")
+    return "unknown_user"
 
-            # ✅ Only save if data exists
-            if data:
-                logging.info(
-                    f"✅ Retrieved {len(data) if isinstance(data, list) else 1} records from {key}, saving JSON.")
-                save_json(client_folder, email, key, data)
-                saved_files.append(f"{key}.json")
-            else:
-                logging.warning(f"⚠️ No data found for {key}, skipping.")
+def get_tokens(email: str) -> str | None:
+    rows = db_query("SELECT access_token FROM users WHERE email=?", (email,))
+    return rows[0][0] if rows else None
 
-        except requests.exceptions.RequestException as e:
-            logging.error(f"❌ Error fetching {key} data for {email}: {e}")
-            continue  # ✅ Skip to next endpoint if an error occurs
+def set_tokens(email: str, access_token: str, refresh_token: str | None):
+    db_execute("""
+        INSERT INTO users (email, access_token, refresh_token)
+        VALUES (?, ?, ?)
+        ON CONFLICT(email) DO UPDATE SET
+          access_token=excluded.access_token,
+          refresh_token=excluded.refresh_token
+    """, (email, access_token, refresh_token))
 
-        # ✅ Move return statement outside loop to ensure all endpoints are processed
-    logging.info(f"✅ Data retrieval complete for {email}. Saved files: {saved_files}")
-    return jsonify({"status": "Data retrieval and saving complete", "saved_files": saved_files})
+def list_dates_range(days: int = 365) -> tuple[str, str]:
+    end_date = datetime.today().date()
+    start_date = end_date - timedelta(days=days)
+    return start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')
 
-
-@app.route("/download/<email>/<data_type>")
-def download_json(email, data_type):
+def fetch_one(email: str, data_type: str) -> Any:
     """
-    Allows downloading JSON files from the Render server.
+    Live-fetch a single slug from Oura and return the JSON payload (no disk writes).
     """
-    folder = os.path.join(BASE_FOLDER, email)
-    filename = f"{data_type}_{datetime.now().strftime('%Y-%m-%d')}.json"
-    file_path = os.path.join(folder, filename)
+    access_token = get_tokens(email)
+    if not access_token:
+        return {"error": "User not found"}, 404
 
-    if os.path.exists(file_path):
-        return send_file(file_path, as_attachment=True)
-    else:
-        return jsonify({"error": "File not found"}), 404
+    endpoints = oura_endpoints()
+    if data_type not in endpoints:
+        return {"error": f"Unknown data_type '{data_type}'"}, 400
 
+    url = endpoints[data_type]
+    headers = {"Authorization": f"Bearer {access_token}"}
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    try:
+        if data_type in ["email", "personal_info"]:
+            resp = requests.get(url, headers=headers, timeout=45)
+            resp.raise_for_status()
+            data = resp.json()
+        else:
+            start_date, end_date = list_dates_range(365)
+            params = {"start_date": start_date, "end_date": end_date}
+            resp = requests.get(url, headers=headers, params=params, timeout=60)
+            resp.raise_for_status()
+            payload = resp.json()
+            # Oura list endpoints return {"data":[...]}
+            data = payload.get("data", []) if isinstance(payload, dict) else payload
+
+        # Always return valid JSON to the client
+        return data, 200
+    except requests.exceptions.HTTPError as e:
+        return {"error": f"Oura error {e.response.status_code}", "body": e.response.text[:300]}, 502
+    except requests.exceptions.RequestException as e:
+        return {"error": "Network error", "detail": str(e)}, 502
+    except ValueError:
+        return {"error": "Invalid JSON from Oura"}, 502
+
+# -------------------------------------------------
+# Routes
+# -------------------------------------------------
+@app.get("/")
+def home():
+    return "✅ Oura OAuth Server (stateless) is running!"
+
+@app.get("/health")
+def health():
+    return jsonify({"status": "ok", "now": datetime.utcnow().isoformat() + "Z"})
+
+@app.get("/users")
+def users():
+    rows = db_query("SELECT email FROM users ORDER BY email")
+    return jsonify([r[0] for r in rows])
+
+@app.get("/callback")
+def callback():
+    code = request.args.get("code")
+    if not code:
+        return "❌ Error: No authorization code received.", 400
+
+    token_url = "https://api.ouraring.com/oauth/token"
+    payload = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "redirect_uri": REDIRECT_URI,
+    }
+    resp = requests.post(token_url, data=payload, timeout=30)
+    if resp.status_code != 200:
+        return f"❌ Error retrieving token: {resp.status_code} - {resp.text}", 400
+
+    tok = resp.json()
+    access_token = tok.get("access_token")
+    refresh_token = tok.get("refresh_token")
+    if not access_token:
+        return "❌ Error: token missing in response.", 400
+
+    email = get_oura_email(access_token)
+    try:
+        set_tokens(email, access_token, refresh_token)
+    except Exception as e:
+        log.error(f"DB save error for {email}: {e}")
+        return "❌ Error: token not saved; check server logs.", 500
+
+    # Verify
+    if not get_tokens(email):
+        return "❌ Error: token not saved; check server logs.", 500
+
+    return f"✅ Access granted! Token for {email} has been stored."
+
+@app.get("/download/<email>/<data_type>")
+def download(email, data_type):
+    """
+    Disk-free: fetch live from Oura and stream JSON to the client.
+    """
+    data, status = fetch_one(email, data_type)
+    if status != 200:
+        return jsonify(data), status
+    # Stream as JSON
+    return Response(json.dumps(data), mimetype="application/json")
+
+@app.get("/fetch_oura_data/<email>")
+def fetch_all(email):
+    """
+    Fetch all supported slugs and return them together (no writes).
+    """
+    results: Dict[str, Any] = {}
+    endpoints = oura_endpoints()
+    for key in endpoints:
+        data, status = fetch_one(email, key)
+        results[key] = data if status == 200 else {"_error": data}
+    return jsonify(results)
